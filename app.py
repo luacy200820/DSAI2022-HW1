@@ -14,85 +14,70 @@ from statsmodels.tsa.arima_model import ARIMA
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 warnings.filterwarnings('ignore')
+# from pandas.tseries.offsets import DateOffset
 
 def predict(dataset):
-    predictions =[]
+    model=sm.tsa.statespace.SARIMAX(dataset['capacity'],order=(3,1,0),seasonal_order=(1,0,1,12))
+    results=model.fit()
 
-    #forecast 
-    for t in range(len(test)):
-        someday = train[-1:].index.values[0]
-        someday= pd.to_datetime(someday,format = '%Y-%m-%d %H:%M:%S')
-        # calculating end date by adding 1 day
-        Enddate = someday + timedelta(days=1)
-        
-        model = ARIMA(dataset,order=(2,1,3))
-        model_fit = model.fit(disp=False)
-        yhat = model_fit.forecast()[0]
-        
-        predictions.append(yhat)
-        train.loc[Enddate] = [round(yhat[0],1)]
+    '''generate date range'''
+    future_dates = pd.date_range(start='20220329',end='20220413')
+    future_datest_df=pd.DataFrame(index=future_dates[0:],columns=dataset.columns)
 
-    return train,predictions
-    
+    future_datest_df['forecast'] = results.predict(start='20220329',end='20220413', dynamic= True)
+    future_datest_df['forecast'] = round(future_datest_df['forecast'],0)
+
+    return future_datest_df['forecast']
+        
 
 # You can write code above the if-main block.
 if __name__ == '__main__':
 
     # # You should not modify this part, but additional arguments are allowed.
-    # import argparse
+    import argparse
 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--training',
-    #                    default='training_data.csv',
-    #                    help='input training data file name')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--training',
+                       default='training_data.csv',
+                       help='input training data file name')
 
-    # parser.add_argument('--output',
-    #                     default='submission.csv',
-    #                     help='output file name')
-    # args = parser.parse_args()
+    parser.add_argument('--output',
+                        default='submission.csv',
+                        help='output file name')
+    args = parser.parse_args()
 
 
     '''load data'''
+    data = pd.read_csv(args.training)
     
-    path_file = '台灣電力公司_過去電力供需資訊2021.csv'
-    data = pd.read_csv(path_file)
     data = pd.DataFrame(data)
-    data = data.loc[:,['日期','備轉容量(MW)']]
-    data.columns=['date','capacity']
+    spring_data = data[-120:]
+    train_spring = spring_data
+    train_spring.set_index('date',inplace=True)
 
-    data['date']= pd.to_datetime(data['date'])
-    today_file =  '台灣電力公司_本年度每日尖峰備轉容量率.csv'
-    today_data = pd.read_csv(today_file)
-    today_data = pd.DataFrame(today_data)
-    today_data = today_data.loc[:,['date','capacity']]
-    today_data['date'] = pd.to_datetime(today_data['date'])
 
-    '''change datetime format'''
-    for index in range(len(data['date'])):
-        index_time = str(data['date'][index]).split('.')[-1][1:]
-        # print(index_time)
-        time_change = datetime.strptime(index_time,"%Y%m%d")
-        data['date'][index] = time_change
-        data['capacity'][index] /= 10 
+    '''show decompose image'''
+    # decomp = seasonal_decompose(train_spring)
+    # fig = decomp.plot()
+    # fig.set_size_inches(15,8)
+    # plt.show()
 
-    '''concat two files'''
-    data_cat = pd.concat([data[:365],today_data])
+    '''show acf and pacf'''
+    fig = plt.figure(figsize=(12,8))
+    ax1 = fig.add_subplot(211)
+    fig = sm.graphics.tsa.plot_acf(train_spring['capacity'],lags=40,ax=ax1)
+    ax2 = fig.add_subplot(212)
+    fig = sm.graphics.tsa.plot_pacf(train_spring['capacity'],lags=40,ax=ax2)
 
-    '''split training set and testing set'''
-    train = data_cat[:-15]
-    test = data_cat[-15:]
+    '''predict'''
+    result = predict(train_spring)
 
-    train.set_index('date',inplace=True)
-    test.set_index('date',inplace=True)
-
-    result,prediction = predict(train)
-    rmse = sqrt(mean_squared_error(test,prediction))
-
-    print('Test RMSE: %.3f'%rmse)
-
+    '''Output'''
     result_predict = result[-15:]
-    result_predict.index = result_predict.index.strftime('%Y%m%d')
-    result_predict.index.name = 'date'
-    result_predict.columns = ['operating_reserve(MW)']
-    result_predict.to_csv( 'submission.csv')
+    df = pd.DataFrame( result_predict)
+ 
+    df.index = df.index.strftime('%Y%m%d')
+    df.index.name = 'date'
+    df.columns = ['operating_reserve(MW)']
+    df.to_csv('submission.csv')
 
