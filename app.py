@@ -48,6 +48,7 @@ if __name__ == '__main__':
 
 
     '''load data'''
+    
     data = pd.read_csv(args.training)
     
     data = pd.DataFrame(data)
